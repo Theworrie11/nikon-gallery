@@ -22,6 +22,14 @@ class NetworkBinder {
   }
 }
 
+/// Photo ko chhota (2 MP) karta hai - phone ke andar, native code se.
+class ImageResizer {
+  static const MethodChannel _ch = MethodChannel('camera/network');
+  static Future<void> resize(String input, String output, int pixels) async {
+    await _ch.invokeMethod('resizeJpeg', {'input': input, 'output': output, 'pixels': pixels});
+  }
+}
+
 class NikonApp extends StatelessWidget {
   const NikonApp({super.key});
 
@@ -61,6 +69,7 @@ class _HomePageState extends State<HomePage> {
   int _done = 0;
   int _total = 0;
   String? _error;
+  bool _twoMp = true; // true = 2 MP, false = Original
 
   @override
   void dispose() {
@@ -162,6 +171,7 @@ class _HomePageState extends State<HomePage> {
 
     for (final h in list) {
       File? file;
+      File? resized;
       try {
         final name = await _client.getFileName(h);
         file = File('${tmp.path}/$name');
@@ -171,13 +181,21 @@ class _HomePageState extends State<HomePage> {
         } finally {
           await sink.close();
         }
-        await Gal.putImage(file.path, album: 'Nikon Z7II');
+        var toSave = file.path;
+        if (_twoMp) {
+          final small = '${tmp.path}/2MP_$name';
+          resized = File(small);
+          await ImageResizer.resize(file.path, small, 2000000);
+          toSave = small;
+        }
+        await Gal.putImage(toSave, album: 'Nikon Z7II');
       } catch (e) {
         failed++;
         lastErr = e.toString();
       } finally {
         try {
           if (file != null && await file.exists()) await file.delete();
+          if (resized != null && await resized.exists()) await resized.delete();
         } catch (_) {}
       }
       if (!mounted) return;
@@ -312,7 +330,23 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             )
-          : null,
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(
+                        value: false, label: Text('Original'), icon: Icon(Icons.photo)),
+                    ButtonSegment<bool>(
+                        value: true,
+                        label: Text('2 MP (chhoti)'),
+                        icon: Icon(Icons.photo_size_select_small)),
+                  ],
+                  selected: {_twoMp},
+                  onSelectionChanged: (s) => setState(() => _twoMp = s.first),
+                ),
+              ),
+            ),
     );
   }
 }
